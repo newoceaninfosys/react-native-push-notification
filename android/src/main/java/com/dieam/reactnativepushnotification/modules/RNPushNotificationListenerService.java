@@ -1,5 +1,9 @@
 package com.dieam.reactnativepushnotification.modules;
 
+import java.util.Map;
+import com.google.firebase.messaging.FirebaseMessagingService;
+import com.google.firebase.messaging.RemoteMessage;
+
 import android.app.ActivityManager;
 import android.app.ActivityManager.RunningAppProcessInfo;
 import android.app.Application;
@@ -13,7 +17,6 @@ import com.facebook.react.ReactApplication;
 import com.facebook.react.ReactInstanceManager;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContext;
-import com.google.android.gms.gcm.GcmListenerService;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -24,10 +27,30 @@ import java.util.Random;
 
 import static com.dieam.reactnativepushnotification.modules.RNPushNotification.LOG_TAG;
 
-public class RNPushNotificationListenerService extends GcmListenerService {
+public class RNPushNotificationListenerService extends FirebaseMessagingService {
 
     @Override
-    public void onMessageReceived(String from, final Bundle bundle) {
+    public void onMessageReceived(RemoteMessage message) {
+        String from = message.getFrom();
+        RemoteMessage.Notification remoteNotification = message.getNotification();
+
+        final Bundle bundle = new Bundle();
+        // Putting it from remoteNotification first so it can be overriden if message
+        // data has it
+        if (remoteNotification != null) {
+            // ^ It's null when message is from GCM
+            bundle.putString("title", remoteNotification.getTitle());
+            bundle.putString("message", remoteNotification.getBody());
+        }
+
+        for(Map.Entry<String, String> entry : message.getData().entrySet()) {
+            bundle.putString(entry.getKey(), entry.getValue());
+        }
+
+
+        // OneSignal
+        JSONObject osCustomdata = getPushData(bundle.getString("custom"));
+
         // {google.sent_time=1509616201546,
         // custom={"a":{"additionalData2":"456","additionalData1":"123"},"i":"3e526372-f895-406e-ad6f-ab0cb2251e98"},
         // o=[{"p":"HELLO_ICON","i":"1","n":"HELLO"},{"p":"XIN_CHAO_ICON","i":"2","n":"XIN CHAO"}],
@@ -47,29 +70,27 @@ public class RNPushNotificationListenerService extends GcmListenerService {
         // google.message_id=0:1509616201550812%b9f27667b1063f92,
         // collapse_key=collapsekey}
 
-        JSONObject osCustomdata = getPushData(bundle.getString("custom"));
-
         // Check if the notification is from OneSignal by checking 'custom' attribute, if it exists so the notification is came from OneSignal
-        if (osCustomdata != null) { 
+        if (osCustomdata != null) {
             if (!bundle.containsKey("message")) {
                 String message = bundle.getString("alert");
                 bundle.putString("message", message != null ? message : "Notification Received");
             }
-            
+
             bundle.putString("color", bundle.getString("bgac"));
 
             // OneSignal Actions
             JSONArray actions = null;
-            
+
             if(bundle.getString("o") != null) {
                 try {
                     actions = new JSONArray(bundle.getString("o"));
-                } 
+                }
                 catch (JSONException e) {
                     e.printStackTrace();
                 }
             }
-            
+
             if (actions != null) {
                 JSONArray newActions = new JSONArray();
                 for (int i = 0 ; i < actions.length(); i++) {
@@ -109,9 +130,14 @@ public class RNPushNotificationListenerService extends GcmListenerService {
             bundle.remove("collapse_key"); // collapse key
         } else {
             JSONObject data = getPushData(bundle.getString("data"));
+            // Copy `twi_body` to `message` to support Twilio
+            if (bundle.containsKey("twi_body")) {
+                bundle.putString("message", bundle.getString("twi_body"));
+            }
+
             if (data != null) {
                 if (!bundle.containsKey("message")) {
-                    bundle.putString("message", data.optString("alert", "Notification received"));
+                    bundle.putString("message", data.optString("alert", null));
                 }
                 if (!bundle.containsKey("title")) {
                     bundle.putString("title", data.optString("title", null));
@@ -129,6 +155,7 @@ public class RNPushNotificationListenerService extends GcmListenerService {
                 }
             }
         }
+
 
         Log.v(LOG_TAG, "onMessageReceived: " + bundle);
 
@@ -190,11 +217,9 @@ public class RNPushNotificationListenerService extends GcmListenerService {
 
         Log.v(LOG_TAG, "sendNotification: " + bundle);
 
-        if (!isForeground) {
-            Application applicationContext = (Application) context.getApplicationContext();
-            RNPushNotificationHelper pushNotificationHelper = new RNPushNotificationHelper(applicationContext);
-            pushNotificationHelper.sendToNotificationCentre(bundle);
-        }
+        Application applicationContext = (Application) context.getApplicationContext();
+        RNPushNotificationHelper pushNotificationHelper = new RNPushNotificationHelper(applicationContext);
+        pushNotificationHelper.sendToNotificationCentre(bundle);
     }
 
     private boolean isApplicationInForeground() {
