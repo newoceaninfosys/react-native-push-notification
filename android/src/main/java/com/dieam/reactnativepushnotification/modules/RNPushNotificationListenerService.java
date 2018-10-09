@@ -73,8 +73,8 @@ public class RNPushNotificationListenerService extends FirebaseMessagingService 
         // Check if the notification is from OneSignal by checking 'custom' attribute, if it exists so the notification is came from OneSignal
         if (osCustomdata != null) {
             if (!bundle.containsKey("message")) {
-                String message = bundle.getString("alert");
-                bundle.putString("message", message != null ? message : "Notification Received");
+                String _message = bundle.getString("alert");
+                bundle.putString("message", _message != null ? _message : "Notification Received");
             }
 
             bundle.putString("color", bundle.getString("bgac"));
